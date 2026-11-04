@@ -2,7 +2,9 @@ name: Android checks
 on:
   push:
     branches: [main, 'codex/**']
+    paths-ignore: ['**/*.md', '**/*.docx']
   pull_request:
+    paths-ignore: ['**/*.md', '**/*.docx']
 permissions:
   contents: read
 concurrency:
