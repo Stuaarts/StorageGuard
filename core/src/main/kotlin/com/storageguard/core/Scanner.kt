@@ -1,6 +1,7 @@
 package com.storageguard.core
 
 import java.io.InputStream
+import java.io.IOException
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -57,24 +58,36 @@ data class ScanResult(
     val hashed: List<HashedAsset>,
     val groups: List<DuplicateGroup>,
     val progress: ScanProgress,
+    val coverageLimit: String? = null,
 )
 
-class DuplicateScanner(private val storage: StorageAccess) {
+class DuplicateScanner(private val storage: StorageAccess, private val limits: ScanLimits = ScanLimits()) {
     suspend fun scan(
         discover: suspend (suspend (Asset) -> Unit) -> Unit,
         checkpoint: suspend () -> Unit = {},
         onProgress: (ScanProgress) -> Unit = {},
     ): ScanResult {
         val inventory = linkedMapOf<String, Asset>()
+        val budget = InventoryBudget(limits)
+        var coverageLimit: String? = null
         var progress = ScanProgress(phase = "Discovering accessible files")
+        try {
         discover { asset ->
             currentCoroutineContext().ensureActive()
             checkpoint()
             // One MediaStore item and its SAF alias must never become two removable copies.
             val key = asset.identity ?: asset.uri
             val previous = inventory[key]
-            if (previous == null || asset.source == Source.MEDIA) inventory[key] = asset
+            if (previous == null || asset.source == Source.MEDIA) {
+                budget.retain(asset, previous)
+                inventory[key] = asset
+            }
             progress = progress.copy(discovered = inventory.size)
+            onProgress(progress)
+        }
+        } catch (limit: ScanLimitExceeded) {
+            coverageLimit = limit.message
+            progress = progress.copy(issues = progress.issues + 1)
             onProgress(progress)
         }
         val candidates = inventory.values.filter { it.size != null && it.size >= 0 }
@@ -88,7 +101,7 @@ class DuplicateScanner(private val storage: StorageAccess) {
             try {
                 val before = storage.refresh(asset)
                 check(before != null && asset.sameVersion(before))
-                val digest = sha256(storage.open(asset), checkpoint) { bytes ->
+                val digest = sha256(storage.open(asset), checkpoint, expectedBytes = asset.size) { bytes ->
                     progress = progress.copy(bytesRead = progress.bytesRead + bytes)
                     onProgress(progress)
                 }
@@ -108,7 +121,7 @@ class DuplicateScanner(private val storage: StorageAccess) {
             .sortedByDescending { it.possibleBytes }
         progress = progress.copy(phase = "Complete")
         onProgress(progress)
-        return ScanResult(inventory.values.toList(), hashed, groups, progress)
+        return ScanResult(inventory.values.toList(), hashed, groups, progress, coverageLimit)
     }
 }
 
@@ -118,20 +131,25 @@ fun Asset.sameVersion(other: Asset): Boolean = uri == other.uri && identity == o
 suspend fun sha256(
     input: InputStream,
     checkpoint: suspend () -> Unit = {},
+    expectedBytes: Long? = null,
     onBytes: (Long) -> Unit = {},
 ): Pair<String, Long> = input.use {
+    require(expectedBytes == null || expectedBytes >= 0)
     val digest = MessageDigest.getInstance("SHA-256")
     val buffer = ByteArray(128 * 1024)
     var total = 0L
     while (true) {
         currentCoroutineContext().ensureActive()
         checkpoint()
-        val count = it.read(buffer)
+        val remaining = expectedBytes?.minus(total)
+        val request = if (remaining != null && remaining < buffer.size) remaining.toInt() + 1 else buffer.size
+        val count = it.read(buffer, 0, request)
         if (count < 0) break
-        if (count == 0) continue
+        if (count == 0) throw IOException("Provider stream did not make progress.")
+        onBytes(count.toLong())
+        if (remaining != null && count.toLong() > remaining) throw IOException("File is larger than its reported size.")
         digest.update(buffer, 0, count)
         total += count
-        onBytes(count.toLong())
     }
     digest.digest().joinToString("") { b -> "%02x".format(b) } to total
 }
@@ -156,7 +174,8 @@ object KeepPolicy {
             } ?: error("Keep at least one independent copy in every group.")
             targets.map { target ->
                 require(target.asset.removable) { "This provider does not support safe removal." }
-                require(target.sha256 == keeper.sha256 && target.asset.size == keeper.asset.size)
+                require(keeper.asset.size != null && keeper.asset.size >= 0 &&
+                    target.sha256 == keeper.sha256 && target.asset.size == keeper.asset.size)
                 Removal(keeper, target)
             }
         }
@@ -170,12 +189,13 @@ class Preflight(private val storage: StorageAccess) {
         require(kept.asset.identity != null && target.asset.identity != null &&
             kept.asset.identity != target.asset.identity) { "Independent copies cannot be established." }
         require(target.asset.removable)
-        require(kept.sha256 == target.sha256 && kept.asset.size == target.asset.size)
+        val expected = kept.asset.size
+        require(expected != null && expected >= 0 && kept.sha256 == target.sha256 && expected == target.asset.size)
         for (file in listOf(kept, target)) {
             val current = storage.refresh(file.asset)
             check(current != null && file.asset.sameVersion(current) &&
                 (!file.asset.removable || current.removable)) { "File changed or access was revoked. Scan again." }
-            val (hash, bytes) = sha256(storage.open(file.asset))
+            val (hash, bytes) = sha256(storage.open(file.asset), expectedBytes = file.asset.size)
             check(hash == file.sha256 && bytes == file.asset.size) { "File contents changed. Scan again." }
         }
         // Compare bytes too. Short reads are filled independently for each provider stream.
@@ -191,6 +211,7 @@ class Preflight(private val storage: StorageAccess) {
                     check(n == m && (0 until n).all { a[it] == b[it] }) { "Copies are no longer identical." }
                     if (n == 0) break
                     compared += n
+                    check(compared <= expected) { "File grew during verification." }
                 }
                 check(compared == kept.asset.size) { "File length changed during verification." }
             }
@@ -208,7 +229,7 @@ class Preflight(private val storage: StorageAccess) {
             currentCoroutineContext().ensureActive()
             val n = input.read(buffer, count, buffer.size - count)
             if (n < 0) break
-            if (n == 0) continue
+            if (n == 0) throw IOException("Provider stream did not make progress.")
             count += n
         }
         return count

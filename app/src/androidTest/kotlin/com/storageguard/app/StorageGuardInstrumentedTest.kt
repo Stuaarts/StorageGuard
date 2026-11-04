@@ -9,6 +9,7 @@ import android.provider.DocumentsContract
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -21,6 +22,7 @@ import com.storageguard.core.*
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import java.security.MessageDigest
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -122,6 +124,145 @@ class StorageGuardInstrumentedTest {
         assertNotNull(saved.completedAt)
     }
 
+    @Test fun unavailablePendingMediaIsUnverifiedRatherThanReportedRemoved() {
+        runBlocking {
+            app.preferences.welcome()
+            app.database.dao().attempts(listOf(CleanupAttempt("missing", "test",
+                "content://media/external_primary/images/media/9223372036854775806", "TRASH", 4, System.currentTimeMillis())))
+        }
+        launch()
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Unverified · media trash").fetchSemanticsNodes().isNotEmpty() }
+        val result = runBlocking { app.database.dao().attempts().first().single() }
+        assertEquals("UNVERIFIED", result.status)
+        assertNull(result.uri)
+    }
+
+    @Test fun interruptedDocumentAttemptIsNeverAssumedDeleted() {
+        runBlocking {
+            app.preferences.welcome()
+            app.database.dao().attempts(listOf(CleanupAttempt("document", "test",
+                "content://com.android.externalstorage.documents/document/primary%3ADocuments%2Fmissing-test.bin",
+                "DELETE", 4, System.currentTimeMillis())))
+        }
+        launch()
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Unverified · document deletion").fetchSemanticsNodes().isNotEmpty() }
+        assertEquals("UNVERIFIED", runBlocking { app.database.dao().attempts().first().single().status })
+    }
+
+    @Test fun protectedCopyAndSelectionSurviveReviewActivityRecreation() {
+        val (a, b) = prepareReview()
+        compose.onNodeWithContentDescription("Remove $prefix-b.png").performScrollTo().performClick()
+        scenario!!.recreate()
+        compose.waitForIdle()
+        compose.onNodeWithText("Review 1 selected · 4 B").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove $prefix-b.png").performScrollTo().assertIsOn()
+        compose.onNodeWithText("Keep this").performScrollTo().performClick()
+        compose.onNodeWithText("Review 0 selected · 0 B").assertIsDisplayed()
+        assertEquals(false, app.storage.isTrashed(a.toString()))
+        assertEquals(false, app.storage.isTrashed(b.toString()))
+    }
+
+    @Test fun changedTargetBlocksTheEntireUiCleanupBeforeAndroidConsent() {
+        val (a, b) = prepareReview()
+        compose.onNodeWithContentDescription("Remove $prefix-b.png").performScrollTo().performClick()
+        app.contentResolver.openOutputStream(b, "wt")!!.use { it.write(byteArrayOf(8, 7, 6, 5)) }
+        compose.onNodeWithText("Review 1 selected · 4 B").performClick()
+        compose.onNodeWithText("Verify & request Android approval").performScrollTo().performClick()
+        compose.waitUntil(15_000) {
+            compose.onAllNodes(hasText("Scan again.", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue(runBlocking { app.database.dao().attempts().first().isEmpty() })
+        assertEquals(false, app.storage.isTrashed(a.toString()))
+        assertEquals(false, app.storage.isTrashed(b.toString()))
+    }
+
+    @Test fun missingKeeperBlocksUiCleanupWithoutRemovingTheRemainingCopy() {
+        val (a, b) = prepareReview()
+        compose.onNodeWithContentDescription("Remove $prefix-b.png").performScrollTo().performClick()
+        app.contentResolver.delete(a, null, null)
+        compose.onNodeWithText("Review 1 selected · 4 B").performClick()
+        compose.onNodeWithText("Verify & request Android approval").performScrollTo().performClick()
+        compose.waitUntil(15_000) { compose.onAllNodes(hasText("Scan again.", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(runBlocking { app.database.dao().attempts().first().isEmpty() })
+        assertEquals(false, app.storage.isTrashed(b.toString()))
+    }
+
+    @Test fun interruptedScanSessionIsMarkedInterruptedOnLaunch() {
+        runBlocking {
+            app.preferences.welcome()
+            app.database.dao().session(com.storageguard.app.data.ScanSession("unfinished", System.currentTimeMillis(), scope = "synthetic test"))
+        }
+        launch()
+        compose.waitUntil(15_000) { runBlocking { app.database.dao().sessions().first().single().status == "INTERRUPTED" } }
+        assertNotNull(runBlocking { app.database.dao().sessions().first().single().endedAt })
+    }
+
+    @Test fun resetClearsPrivateStateWithoutRemovingUserFiles() {
+        val (a, b) = prepareReview()
+        val before = digest(a)
+        runBlocking {
+            app.preferences.permanent(true)
+            app.preferences.addSource("D|$a")
+            app.database.dao().attempts(listOf(CleanupAttempt("reset-test", "test", null, "TRASH", 4,
+                System.currentTimeMillis(), completedAt = System.currentTimeMillis(), status = "SKIPPED")))
+        }
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Reset local app data").performScrollTo().performClick()
+        compose.onNodeWithText("Reset app data").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Continue without media access").fetchSemanticsNodes().isNotEmpty() }
+        runBlocking {
+            assertTrue(app.database.dao().files().isEmpty())
+            assertTrue(app.database.dao().sessions().first().isEmpty())
+            assertTrue(app.database.dao().attempts().first().isEmpty())
+            val prefs = app.preferences.flow.first()
+            assertFalse(prefs.welcomed)
+            assertFalse(prefs.permanentDelete)
+            assertTrue(prefs.sources.isEmpty())
+        }
+        assertEquals(before, digest(a))
+        assertEquals(false, app.storage.isTrashed(a.toString()))
+        assertEquals(false, app.storage.isTrashed(b.toString()))
+    }
+
+    @Test fun installedAppHasNoNetworkingOrBroadStoragePermissionAndBackupsAreOff() {
+        val info = app.packageManager.getPackageInfo(app.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS or android.content.pm.PackageManager.GET_PROVIDERS)
+        val requested = info.requestedPermissions.orEmpty().toSet()
+        assertFalse("android.permission.INTERNET" in requested)
+        assertFalse("android.permission.MANAGE_EXTERNAL_STORAGE" in requested)
+        assertEquals(0, info.applicationInfo!!.flags and android.content.pm.ApplicationInfo.FLAG_ALLOW_BACKUP)
+        assertTrue("No production provider should be exported", info.providers.orEmpty().none { it.exported })
+    }
+
+    @Test fun pauseCancelAndRestartKeepFilesUntouched() {
+        val content = ByteArray(2 * 1024 * 1024) { (it % 251).toByte() }
+        val a = image("pause-a", content)
+        val b = image("pause-b", content)
+        val before = digest(a)
+        runBlocking { app.preferences.welcome() }
+        launch()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Scan accessible files").fetchSemanticsNodes().isNotEmpty() }
+        lateinit var vm: StorageViewModel
+        scenario!!.onActivity {
+            vm = ViewModelProvider(it)[StorageViewModel::class.java]
+            vm.scan()
+            vm.pause()
+        }
+        compose.waitUntil(10_000) { vm.state.value.paused && vm.state.value.running }
+        compose.onNodeWithText("Scan paused.").assertIsDisplayed()
+        scenario!!.onActivity { vm.pause(); vm.cancel() }
+        compose.waitUntil(15_000) { !vm.state.value.running }
+        assertEquals("CANCELLED", runBlocking { app.database.dao().sessions().first().first().status })
+        scenario!!.onActivity { vm.scan() }
+        compose.waitUntil(30_000) { vm.state.value.scanFinished && !vm.state.value.running }
+        assertTrue(vm.state.value.groups.any { group -> group.files.map { it.asset.uri }.containsAll(listOf(a.toString(), b.toString())) })
+        assertEquals(before, digest(a))
+        assertEquals(before, digest(b))
+        assertEquals(false, app.storage.isTrashed(a.toString()))
+        assertEquals(false, app.storage.isTrashed(b.toString()))
+        assertTrue(runBlocking { app.database.dao().attempts().first().isEmpty() })
+    }
+
     @Test fun selectedLocalFolderDeduplicatesAliasesAndSupportsReviewedDocumentDeletion() {
         image("folder-a", byteArrayOf(1, 2, 3, 4))
         image("folder-b", byteArrayOf(1, 2, 3, 4))
@@ -133,8 +274,10 @@ class StorageGuardInstrumentedTest {
         // The disposable emulator's picker opens local storage. Both names are actual provider rows.
         device.wait(Until.findObject(By.text("Pictures")), 10_000)!!.click()
         device.wait(Until.findObject(By.text("StorageGuardTests")), 10_000)!!.click()
-        device.wait(Until.findObject(By.res("android", "button1").enabled(true)), 10_000)!!.click()
-        device.wait(Until.findObject(By.res("android", "button1").enabled(true)), 10_000)!!.click()
+        assertTrue("Wait for the chosen folder's contents before granting access",
+            device.wait(Until.hasObject(By.text("$prefix-folder-a.png")), 10_000))
+        device.wait(Until.findObject(By.res("android", "button1").text(java.util.regex.Pattern.compile("use this folder", java.util.regex.Pattern.CASE_INSENSITIVE))), 10_000)!!.click()
+        device.wait(Until.findObject(By.res("android", "button1").text(java.util.regex.Pattern.compile("allow", java.util.regex.Pattern.CASE_INSENSITIVE))), 10_000)!!.click()
         compose.waitUntil(10_000) { runBlocking { app.preferences.flow.first().sources.isNotEmpty() } }
         val sources = runBlocking { app.preferences.flow.first().sources }
         val root = Uri.parse(sources.single().substringAfter('|'))
@@ -145,6 +288,10 @@ class StorageGuardInstrumentedTest {
         }
         assertEquals("Media and SAF references must be counted once", 2, aliases.inventory.size)
         assertEquals(4L, aliases.groups.single().possibleBytes)
+        val limitedStorage = AndroidStorage(app, ScanLimits(maxProviderRows = 1))
+        val limited = runBlocking { DuplicateScanner(limitedStorage).scan({ emit -> limitedStorage.discover(sources, { error(it) }, emit) }) }
+        assertNotNull("Adapter limits must propagate as a controlled partial scan", limited.coverageLimit)
+        assertTrue(limited.progress.issues > 0)
         val parent = DocumentsContract.buildDocumentUriUsingTree(root, DocumentsContract.getTreeDocumentId(root))
         fun document(suffix: String): Uri {
             val uri = DocumentsContract.createDocument(app.contentResolver, parent, "application/octet-stream", "$prefix-doc-$suffix.bin")!!
@@ -182,9 +329,22 @@ class StorageGuardInstrumentedTest {
         compose.waitUntil(20_000) { compose.onAllNodesWithText("Deleted · document deletion").fetchSemanticsNodes().isNotEmpty() }
         val stillPresent = createdDocuments.count { storage.documentExists(it.toString()) == true }
         assertEquals("One verified document must remain", 1, stillPresent)
+        // Saved folder access is revoked explicitly, then the index is invalidated.
+        scenario!!.onActivity { ViewModelProvider(it)[StorageViewModel::class.java].removeSource(sources.single()) }
+        compose.waitUntil(10_000) { runBlocking { app.preferences.flow.first().sources.isEmpty() } }
+        assertFalse(app.contentResolver.persistedUriPermissions.any { it.uri == root })
     }
 
     private fun prepareMediaTrash(): Pair<Uri, Uri> {
+        val (a, b) = prepareReview()
+        compose.onNodeWithContentDescription("Remove $prefix-b.png").performScrollTo().performClick()
+        compose.onNodeWithText("Review 1 selected · 4 B").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Check before cleanup.").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Verify & request Android approval").performScrollTo().performClick()
+        return a to b
+    }
+
+    private fun prepareReview(): Pair<Uri, Uri> {
         val a = image("a", byteArrayOf(1, 2, 3, 4))
         val b = image("b", byteArrayOf(1, 2, 3, 4))
         runBlocking { app.preferences.welcome() }
@@ -193,11 +353,11 @@ class StorageGuardInstrumentedTest {
         compose.onNodeWithText("Scan accessible files").performScrollTo().performClick()
         compose.waitUntil(20_000) { compose.onAllNodesWithText("$prefix-a.png").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("$prefix-a.png").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Remove $prefix-b.png").performScrollTo().performClick()
-        compose.onNodeWithText("Review 1 selected · 4 B").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Check before cleanup.").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Verify & request Android approval").performScrollTo().performClick()
         return a to b
+    }
+
+    private fun digest(uri: Uri): String = app.contentResolver.openInputStream(uri)!!.use { input ->
+        MessageDigest.getInstance("SHA-256").digest(input.readBytes()).joinToString("") { "%02x".format(it) }
     }
 
     private fun launch() { scenario = ActivityScenario.launch(MainActivity::class.java) }

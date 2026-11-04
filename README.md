@@ -35,6 +35,8 @@ Only granted, supported files can be analyzed. Other apps' private caches and da
 
 Shared files can change in another app while Android's consent dialog is open. Android offers no cross-provider transaction lock; StorageGuard checks fresh metadata, hashes and bytes before requesting removal and refuses observed uncertainty. Keep other apps from editing selected files during cleanup. Scans run in the app and survive activity recreation; interrupted processes require restarting the scan.
 
+Scans retain at most 30,000 file records and enforce metadata and provider traversal budgets. Reaching a limit produces explicit partial coverage; choose smaller folders to analyze the remainder. These bounds protect against excessive provider responses. A provider that blocks inside a query/read may still delay cancellation until that call returns.
+
 ## Build
 
 Install Android Studio, JDK 17, Android SDK 36, and SDK Build Tools 35.0.0. Set `ANDROID_HOME` to your SDK directory or provide an untracked `local.properties` with `sdk.dir`. The Gradle wrapper pins Gradle 8.13; Android Gradle Plugin is 8.11.1, Kotlin is 2.2.20, and the minimum Android API is 30.
@@ -53,6 +55,8 @@ On macOS/Linux use `bash ./gradlew` instead. If Java selection is wrong, point `
 `core` owns platform-independent scanning, duplicate grouping, identity and safety rules. `app` contains ContentResolver adapters, Room storage, DataStore preferences, the ViewModel, and Compose screens. See [architecture](docs/ARCHITECTURE.md), [device checks](docs/TESTING.md), and [privacy](docs/PRIVACY.md).
 
 The GitHub Actions workflow builds debug/release variants, runs core tests and lint, and runs emulator instrumentation. Generated APKs and reports are build artifacts, not committed source. Keep implementation milestones in focused commits and push completed, checked work to the configured Git remote.
+
+The workflow also checks the actual merged release manifest for unexpected permissions, debugging, backups and exported components, and runs device tests on Android API 30, 34 and 36. See [security and stability verification](docs/SECURITY_STABILITY_REVIEW.md) for measured results and remaining limits.
 
 ## Android references
 

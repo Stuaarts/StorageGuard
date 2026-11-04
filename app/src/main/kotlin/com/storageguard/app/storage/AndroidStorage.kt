@@ -16,6 +16,9 @@ import android.provider.OpenableColumns
 import com.storageguard.core.Asset
 import com.storageguard.core.Source
 import com.storageguard.core.StorageAccess
+import com.storageguard.core.ScanLimits
+import com.storageguard.core.ScanLimitExceeded
+import com.storageguard.core.DirectoryTraversal
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -29,7 +32,7 @@ data class Coverage(val images: Boolean, val videos: Boolean, val partial: Boole
     }
 }
 
-class AndroidStorage(private val context: Context) : StorageAccess {
+class AndroidStorage(private val context: Context, private val limits: ScanLimits = ScanLimits()) : StorageAccess {
     private val resolver = context.contentResolver
     fun coverage(): Coverage {
         fun granted(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
@@ -40,6 +43,10 @@ class AndroidStorage(private val context: Context) : StorageAccess {
     }
 
     suspend fun discover(sources: Set<String>, issue: (String) -> Unit, emit: suspend (Asset) -> Unit) {
+        discover(sources, issue, {}, emit)
+    }
+
+    suspend fun discover(sources: Set<String>, issue: (String) -> Unit, checkpoint: suspend () -> Unit, emit: suspend (Asset) -> Unit) {
         val access = coverage()
         for (volume in MediaStore.getExternalVolumeNames(context)) {
             val collections = buildList {
@@ -51,11 +58,13 @@ class AndroidStorage(private val context: Context) : StorageAccess {
                     resolver.query(collection, MEDIA_COLUMNS, null, null, "${MediaStore.MediaColumns._ID} ASC")?.use { cursor ->
                         while (cursor.moveToNext()) {
                             currentCoroutineContext().ensureActive()
+                            checkpoint()
                             val uri = ContentUris.withAppendedId(collection, cursor.getLong(cursor.getColumnIndexOrThrow("_id")))
                             emit(mediaAsset(uri, cursor))
                         }
                     } ?: issue("A media collection could not be queried.")
                 } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                catch (limit: ScanLimitExceeded) { throw limit }
                 catch (_: Exception) { issue("A media collection became unavailable or access was revoked.") }
             }
         }
@@ -63,29 +72,31 @@ class AndroidStorage(private val context: Context) : StorageAccess {
             currentCoroutineContext().ensureActive()
             val uri = Uri.parse(source.substringAfter('|'))
             try {
-                if (source.startsWith("T|")) discoverTree(uri, issue, emit)
+                checkpoint()
+                if (source.startsWith("T|")) discoverTree(uri, issue, checkpoint, emit)
                 else documentAsset(uri)?.let { emit(it) } ?: issue("A selected file is no longer available.")
             } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (limit: ScanLimitExceeded) { throw limit }
             catch (_: Exception) { issue("A selected location is unavailable. Re-select it in Settings.") }
         }
     }
 
-    private suspend fun discoverTree(tree: Uri, issue: (String) -> Unit, emit: suspend (Asset) -> Unit) {
-        val pending = ArrayDeque<String>()
-        val visited = mutableSetOf<String>()
-        pending.add(DocumentsContract.getTreeDocumentId(tree))
-        while (pending.isNotEmpty()) {
+    private suspend fun discoverTree(tree: Uri, issue: (String) -> Unit, checkpoint: suspend () -> Unit, emit: suspend (Asset) -> Unit) {
+        val traversal = DirectoryTraversal(DocumentsContract.getTreeDocumentId(tree), limits)
+        while (true) {
             currentCoroutineContext().ensureActive()
-            val parent = pending.removeFirst()
-            if (!visited.add(parent)) continue
+            checkpoint()
+            val parent = traversal.next() ?: break
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
             try {
                 resolver.query(children, DOCUMENT_COLUMNS, null, null, null)?.use { cursor ->
                     while (cursor.moveToNext()) {
                         currentCoroutineContext().ensureActive()
+                        checkpoint()
+                        traversal.recordRow()
                         val id = cursor.string(DocumentsContract.Document.COLUMN_DOCUMENT_ID) ?: continue
                         if (cursor.string(DocumentsContract.Document.COLUMN_MIME_TYPE) == DocumentsContract.Document.MIME_TYPE_DIR) {
-                            pending.add(id)
+                            traversal.enqueue(id)
                         } else {
                             val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
                             emit(documentFromCursor(uri, cursor))
@@ -93,6 +104,7 @@ class AndroidStorage(private val context: Context) : StorageAccess {
                     }
                 } ?: issue("A folder could not be read.")
             } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (limit: ScanLimitExceeded) { throw limit }
             catch (_: Exception) { issue("Part of a selected folder could not be read.") }
         }
     }
@@ -190,5 +202,9 @@ class AndroidStorage(private val context: Context) : StorageAccess {
     }
 }
 
-private fun Cursor.string(column: String): String? = getColumnIndex(column).takeIf { it >= 0 && !isNull(it) }?.let { getString(it) }
+private fun Cursor.string(column: String): String? = getColumnIndex(column).takeIf { it >= 0 && !isNull(it) }?.let {
+    getString(it)?.also { value ->
+        if (value.length > 4_096) throw ScanLimitExceeded("A provider returned oversized metadata. Scan coverage is partial.")
+    }
+}
 private fun Cursor.number(column: String): Long? = getColumnIndex(column).takeIf { it >= 0 && !isNull(it) }?.let { getLong(it) }

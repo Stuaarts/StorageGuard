@@ -126,11 +126,15 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
             try {
                 db.withTransaction { dao.clearFiles(); dao.clearGroups(); dao.session(session) }
                 var lastProgressAt = 0L
+                val checkpoint: suspend () -> Unit = {
+                    currentCoroutineContext().ensureActive()
+                    while (_state.value.paused) { delay(100); currentCoroutineContext().ensureActive() }
+                }
                 val result = DuplicateScanner(storage).scan(
                     discover = { emit -> storage.discover(sources, { issue ->
                         _state.update { it.copy(issues = (it.issues + issue).distinct()) }
-                    }, emit) },
-                    checkpoint = { while (_state.value.paused) { delay(100); ensureActive() } },
+                    }, checkpoint, emit) },
+                    checkpoint = checkpoint,
                     onProgress = { progress ->
                         // Avoid recomposing the whole app for every 128 KiB read.
                         val now = System.currentTimeMillis()
@@ -147,7 +151,8 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
                     dao.trimSessions()
                 }
                 _state.update { it.copy(groups = result.groups, protected = defaults(result.groups), progress = result.progress,
-                    scanFinished = true, page = Page.FINDINGS) }
+                    scanFinished = true, page = Page.FINDINGS,
+                    issues = (it.issues + listOfNotNull(result.coverageLimit)).distinct()) }
             } catch (cancel: CancellationException) {
                 withContext(NonCancellable) { dao.session(session.copy(endedAt = System.currentTimeMillis(), status = "CANCELLED",
                     discovered = _state.value.progress.discovered, errors = _state.value.progress.issues)) }

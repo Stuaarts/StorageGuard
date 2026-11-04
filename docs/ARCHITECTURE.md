@@ -18,6 +18,8 @@ Scans run on `Dispatchers.IO` in a ViewModel coroutine. Discovery normalizes fil
 
 Progress is throttled to about ten updates per second. Pause cooperatively stops discovery emission and hashing reads; cancellation closes streams. Some provider query/read calls can block until the provider returns. A new scan restarts inventory and clears earlier findings; it does not reuse incomplete hashes. Partial provider failures are surfaced and successful comparisons remain usable.
 
+`ScanLimits` bounds retained inventory to 30,000 records and 4,000,000 metadata characters, with a 4,096-character per-field cap. Each tree traversal permits up to 4,096 unique directories, 1,000,000 retained ID characters and 100,000 rows. IDs are deduplicated before enqueueing. Reaching a budget stops discovery with a visible partial-coverage reason and hashes only the retained candidates. Unknown-size files consume the same inventory budget. Streams that exceed their advertised size are rejected after at most one extra byte; streams returning zero progress fail rather than spin. Pause checkpoints apply to directory traversal as well as file/hash work.
+
 ## Identity and coverage
 
 MediaStore assets use volume plus relative location/name when available, with a volume/row ID fallback. Standard local ExternalStorageProvider document IDs map to the same volume/path identity, preventing MediaStore and SAF from counting the same accessible asset twice. Full hash equality alone never establishes independent copies.

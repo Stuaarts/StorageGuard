@@ -322,6 +322,7 @@ private fun Findings(state: AppState, onOpen: (DuplicateGroup) -> Unit, onScan: 
         item { Title("A few copies too many?", "${state.groups.size} groups · ${formatBytes(state.possibleBytes)} possible savings. Nothing is selected automatically.") }
         if (state.restored) item { InfoCard(Icons.Outlined.Update, "Saved findings", "These results are from an earlier scan. All files must pass fresh verification before removal.") }
         if (state.issues.isNotEmpty() || state.progress.issues > 0) item { InfoCard(Icons.Outlined.Info, "Partial scan coverage", "Some locations or files could not be read. Results cover only successfully compared files.") }
+        items(state.issues) { issue -> Text(issue, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
         item {
             OutlinedTextField(search, { search = it }, label = { Text("Search names or locations") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                 leadingIcon = { Icon(Icons.Outlined.Search, null) })
