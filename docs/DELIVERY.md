@@ -27,6 +27,7 @@ Local verification uses Windows, JDK 17, SDK 36 and an isolated Android 16 / API
 | Onboarding, settings and activity recreation | Passed on API 36 emulator |
 | Real MediaStore discovery, hashing, Room persistence and changed-content refusal | Passed on API 36 emulator |
 | Android trash approval and retained-copy verification | Passed on API 36 emulator |
+| Live emulator cleanup of the prepared sample pair | Passed; copy trashed, explicitly protected original readable with unchanged SHA-256, rescan shows no duplicates; [manual record](MANUAL_CLEANUP_CHECK.md) |
 | Android trash denial and both-copy retention | Passed on API 36 emulator |
 | Simulated interrupted pending request reconciled on launch | Passed on API 36 emulator; terminal audit URI omitted |
 | Local folder grant, alias deduplication and reviewed document deletion | Passed on API 36 emulator; parent-folder absence checked after deletion |
