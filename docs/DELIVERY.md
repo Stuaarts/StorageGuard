@@ -30,6 +30,7 @@ Local verification uses Windows, JDK 17, SDK 36 and an isolated Android 16 / API
 | Android trash denial and both-copy retention | Passed on API 36 emulator |
 | Simulated interrupted pending request reconciled on launch | Passed on API 36 emulator; terminal audit URI omitted |
 | Local folder grant, alias deduplication and reviewed document deletion | Passed on API 36 emulator; parent-folder absence checked after deletion |
+| Initial layout checks | Welcome/review screens inspected; dashboard inspected at normal and 200% font on API 36; full accessibility matrix remains open |
 | GitHub-hosted workflow | Configured; first remote run still to be checked |
 
 Generated test and lint reports are under each module's ignored `build/reports` directory. Build outputs are under `app/build/outputs/apk`. Test assertions use synthetic files; no personal file contents are committed.

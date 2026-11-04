@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -88,6 +89,7 @@ private val LightColors = lightColorScheme(
     primaryContainer = Color(0xFFC7F1E4), onPrimaryContainer = Color(0xFF073D35),
     secondary = Color(0xFF4C635C), surface = Color(0xFFF7FAF8), surfaceContainer = Color(0xFFECF2EE),
     background = Color(0xFFF7FAF8), onBackground = Color(0xFF17221F),
+    secondaryContainer = Color(0xFFDDECE4), onSecondaryContainer = Color(0xFF163E32), surfaceContainerHighest = Color(0xFFE1EAE4),
     surfaceContainerLow = Color(0xFFF0F5F2), onSurface = Color(0xFF17221F), outlineVariant = Color(0xFFD2DFD8),
 )
 private val DarkColors = darkColorScheme(
@@ -95,6 +97,7 @@ private val DarkColors = darkColorScheme(
     primaryContainer = Color(0xFF164E41), onPrimaryContainer = Color(0xFFC7F1E4),
     surface = Color(0xFF101916), surfaceContainer = Color(0xFF1B2822), surfaceContainerLow = Color(0xFF17211C),
     background = Color(0xFF101916), onBackground = Color(0xFFE1EBE5),
+    secondaryContainer = Color(0xFF304D40), onSecondaryContainer = Color(0xFFD0EBDD), surfaceContainerHighest = Color(0xFF2B3931),
     onSurface = Color(0xFFE1EBE5), outlineVariant = Color(0xFF3B4C43),
 )
 @Composable
@@ -151,7 +154,7 @@ private fun StorageGuardApp(state: AppState, vm: StorageViewModel, preview: (Ass
                 listOf(Triple(Page.HOME, "Home", Icons.Outlined.Home), Triple(Page.FINDINGS, "Findings", Icons.Outlined.FolderCopy),
                     Triple(Page.SCAN, "Scan", Icons.Outlined.Radar), Triple(Page.SETTINGS, "Settings", Icons.Outlined.Settings)).forEach { (page, title, icon) ->
                     NavigationBarItem(selected = state.page == page && group == null, onClick = { groupId = null; vm.page(page) },
-                        icon = { Icon(icon, null) }, label = { Text(title) })
+                        icon = { Icon(icon, null) }, label = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) })
                 }
             }
         },
