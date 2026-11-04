@@ -51,6 +51,9 @@ def check_manifest(xml):
         permission = component.get(ANDROID + "permission")
         exported.append({"kind": component.tag, "name": name, "permission": permission})
         launcher = component.tag == "activity" and name == PACKAGE + ".MainActivity"
+        # apkanalyzer may print the compiled ActivityInfo.LAUNCH_SINGLE_TASK enum as 2.
+        if launcher and component.get(ANDROID + "launchMode") not in {"singleTask", "2"}:
+            errors.append("Launcher must preserve one cleanup activity using singleTask")
         profile_installer = (
             component.tag == "receiver"
             and name == "androidx.profileinstaller.ProfileInstallReceiver"
@@ -68,8 +71,11 @@ def main():
     args = parser.parse_args()
     if not args.apkanalyzer:
         parser.error("Android command-line tools are required; add apkanalyzer to PATH or pass --apkanalyzer")
-    result = subprocess.run([args.apkanalyzer, "manifest", "print", str(args.apk.resolve())],
-                            check=True, capture_output=True, text=True)
+    try:
+        result = subprocess.run([args.apkanalyzer, "manifest", "print", str(args.apk.resolve())],
+                                check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as error:
+        raise SystemExit(error.stderr.strip() or "apkanalyzer failed to inspect the APK") from error
     errors, summary = check_manifest(result.stdout)
     summary.update({"apk": str(args.apk.resolve()), "passed": not errors, "errors": errors})
     print(json.dumps(summary, indent=2))

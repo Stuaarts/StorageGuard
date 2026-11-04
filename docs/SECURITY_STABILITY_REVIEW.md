@@ -10,6 +10,8 @@ The audit identified one low-severity local availability issue: a user-selected 
 
 The subsequent implementation adds file-count, retained-metadata, field-length, traversal-row and directory budgets, directory enqueue deduplication, visible partial results and overlong/zero-progress stream rejection. The original sealed scan records the pre-hardening source; regression tests verify the new controls. Generic providers remain review-only, and keep-first/preflight/consent checks are preserved.
 
+A later lifecycle regression demonstrated that a repeated launcher intent with multiple-task flags could create a second main activity/ViewModel, whose startup reconciliation could overlap a live cleanup. The launcher is now `singleTask`, with a regression test and merged-manifest gate enforcing one cleanup activity. This correction followed the sealed source snapshot and is recorded separately from that scan's finding count.
+
 No supported deletion-consent bypass, index-upload path, embedded credential/private-key exposure, SQL injection or incoming-intent cleanup command was found in reviewed first-party source. This is a review result, not proof that no unknown vulnerability exists.
 
 ## Checks completed so far
@@ -17,14 +19,16 @@ No supported deletion-consent bypass, index-upload path, embedded credential/pri
 | Check | Observed result |
 | --- | --- |
 | Core JVM suite | 32 tests passed, including 15 added hardening/failure tests |
-| Android 16 / API 36 suite | 15 instrumented tests passed together after fixing a folder-picker test timing race |
+| Android instrumented suites | 15 tests passed on APIs 30, 34 and 36 in the first expanded CI run; the final 16-test suite including repeated launches passed locally on API 34, with final CI rerun pending |
 | Debug and optimized release builds | Passed |
 | Android lint | Passed, nonblocking update/style notices remain |
 | Actual release manifest | No Internet/all-files permission, backups disabled, not debuggable/testOnly, expected exported launcher and OS-protected profile receiver only |
 | Gradle wrapper | Matches published 8.13 wrapper SHA-256 `81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f` |
 | Runtime dependency advisories | OSV returned no matches for 79 resolved Maven runtime components on November 3, 2026 |
-| Android 11 / API 30 and Android 14 / API 34 | Additional emulator runs in progress |
-| Hosted CI for the expanded checks | Configuration updated; final run pending |
+| Android 11 / API 30 denied access | Actual Android permission denial leaves accurate coverage UI and a responsive app; scan without access completes with zero accessible files |
+| Android 14 / API 34 selected-photo access | Selected two synthetic photos through Android's permission UI; app scanned those two and excluded a third unselected photo added afterward |
+| Actual process termination during consent | Before the single-task correction, killed the real app process while Android's consent UI remained open; approved the synthetic copy after termination, relaunched, and observed correct TRASHED reconciliation with original SHA-256 unchanged |
+| Hosted CI for the expanded checks | First expanded run passed all four jobs: [build and API 30/34/36 tests](https://github.com/Stuaarts/StorageGuard/actions/runs/41766108208); final single-task rerun pending |
 
 The dependency query used [OSV's package/version API](https://google.github.io/osv.dev/post-v1-querybatch/). It sent public component coordinates and versions, not user files or indexed metadata. Database coverage can be incomplete and new advisories can appear. Toolchain plugins, native platform vulnerabilities and unreported dependency defects are not certified by that result.
 

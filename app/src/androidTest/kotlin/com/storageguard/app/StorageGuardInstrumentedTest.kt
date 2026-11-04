@@ -1,6 +1,9 @@
 package com.storageguard.app
 
 import android.content.ContentValues
+import android.content.Intent
+import android.app.Activity
+import android.app.Application
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -261,6 +264,43 @@ class StorageGuardInstrumentedTest {
         assertEquals(false, app.storage.isTrashed(a.toString()))
         assertEquals(false, app.storage.isTrashed(b.toString()))
         assertTrue(runBlocking { app.database.dao().attempts().first().isEmpty() })
+    }
+
+    @Test fun repeatedLauncherIntentsCannotCreateParallelCleanupViewModels() {
+        runBlocking { app.preferences.welcome() }
+        launch()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Know your storage.").fetchSemanticsNodes().isNotEmpty() }
+        lateinit var currentViewModel: StorageViewModel
+        scenario!!.onActivity { currentViewModel = ViewModelProvider(it)[StorageViewModel::class.java] }
+        compose.waitUntil(10_000) { currentViewModel.state.value.ready && !currentViewModel.state.value.busy }
+        runBlocking {
+            app.database.dao().attempts(listOf(CleanupAttempt("live-request", "test",
+                "content://media/external_primary/images/media/9223372036854775806", "TRASH", 4, System.currentTimeMillis())))
+        }
+        val created = java.util.concurrent.CopyOnWriteArrayList<Activity>()
+        val observer = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, state: Bundle?) { if (activity is MainActivity) created.add(activity) }
+            override fun onActivityStarted(activity: Activity) { }
+            override fun onActivityResumed(activity: Activity) { }
+            override fun onActivityPaused(activity: Activity) { }
+            override fun onActivityStopped(activity: Activity) { }
+            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) { }
+            override fun onActivityDestroyed(activity: Activity) { }
+        }
+        app.registerActivityLifecycleCallbacks(observer)
+        try {
+            scenario!!.onActivity { activity ->
+                activity.startActivity(Intent(activity, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK))
+            }
+            device.waitForIdle()
+            instrumentation.waitForIdleSync()
+            assertTrue("A second launcher must reuse the current activity and its cleanup state", created.isEmpty())
+            assertEquals("A live request must not be reconciled by a second ViewModel", 1, runBlocking { app.database.dao().pending().size })
+        } finally {
+            app.unregisterActivityLifecycleCallbacks(observer)
+            instrumentation.runOnMainSync { created.forEach { it.finish() } }
+        }
     }
 
     @Test fun selectedLocalFolderDeduplicatesAliasesAndSupportsReviewedDocumentDeletion() {

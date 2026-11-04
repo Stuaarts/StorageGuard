@@ -2,6 +2,8 @@
 
 StorageGuard is an Android 11+ application. There is no server component. Compose renders immutable `AppState` from `StorageViewModel`; user actions flow back through that ViewModel. A small application container supplies the storage adapter, Room database and DataStore preferences.
 
+The launcher uses `singleTask` so repeated or multiple-task launcher intents reuse the existing main activity instead of creating parallel ViewModels with separate cleanup/scan guards. Activity recreation retains the ViewModel normally; a real process restart still uses persisted request reconciliation.
+
 ## Modules and data flow
 
 | Location | Responsibility |

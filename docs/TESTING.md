@@ -16,6 +16,8 @@ The JVM suite covers renamed exact copies, same-size different bytes, alias dedu
 
 Instrumentation covers real MediaStore discovery and streams, Room result persistence, stale-content preflight refusal, onboarding, access/settings navigation, activity recreation, approved/denied Android trash, simulated interrupted-request reconciliation, real SAF folder grants, MediaStore/SAF alias deduplication and explicitly reviewed local document deletion. Further cases and the exact completed runs are listed in [delivery status](DELIVERY.md).
 
+The expanded suite also checks resource limits, live hash cancellation/closure, changed or missing copies through the UI, unavailable evidence, scan interruption, reset without file deletion, and repeated launcher intents. CI tests APIs 30, 34 and 36, and checks the built release manifest using `scripts/check_apk_policy.py`. Current security/stability evidence and remaining limits are recorded in [SECURITY_STABILITY_REVIEW.md](SECURITY_STABILITY_REVIEW.md).
+
 ## Device release gate
 
 Run the following matrix on Android 11/12, Android 13, Android 14 with selected access, and Android 16, including at least one physical device and removable storage where supported. An API 36 emulator alone does not validate every version/provider.
