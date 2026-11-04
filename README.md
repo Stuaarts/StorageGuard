@@ -1,5 +1,7 @@
 # StorageGuard
 
+[![Android checks](https://github.com/Stuaarts/StorageGuard/actions/workflows/android.yml/badge.svg)](https://github.com/Stuaarts/StorageGuard/actions/workflows/android.yml)
+
 StorageGuard helps Android owners understand redundant files and safely review exact duplicates. Its goal is simple: **find what your phone stores, understand where copies live, and remove only what you choose.**
 
 The MVP is a native Kotlin / Jetpack Compose app for Android 11 and newer. It processes accessible files on the device, with no account, backend, advertising, analytics, or file uploads. Detection uses full streaming SHA-256 hashes, with a fresh byte comparison before cleanup. It never deletes automatically.
