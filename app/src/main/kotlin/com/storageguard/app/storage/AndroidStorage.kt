@@ -114,10 +114,28 @@ class AndroidStorage(private val context: Context) : StorageAccess {
         }
     } catch (_: Exception) { null }
 
-    fun documentExists(uriString: String): Boolean? = try {
-        resolver.query(Uri.parse(uriString), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { it.moveToFirst() }
-    } catch (_: java.io.FileNotFoundException) { false }
-    catch (_: Exception) { null }
+    fun documentExists(uriString: String): Boolean? {
+        val uri = Uri.parse(uriString)
+        val direct = try {
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { it.moveToFirst() }
+        } catch (_: java.io.FileNotFoundException) { false }
+        catch (_: Exception) { null }
+        if (direct != null) return direct
+        // ExternalStorageProvider can reject a deleted document URI rather than returning an
+        // empty cursor. Verify absence through its still-readable, fully granted local parent.
+        // An inaccessible parent or an opaque provider is never interpreted as deletion.
+        if (uri.authority != "com.android.externalstorage.documents" || !DocumentsContract.isTreeUri(uri)) return null
+        return try {
+            val id = DocumentsContract.getDocumentId(uri)
+            val parentId = id.substringBeforeLast('/', id.substringBefore(':') + ":")
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(uri, parentId)
+            resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { cursor ->
+                var found = false
+                while (cursor.moveToNext()) if (cursor.string(DocumentsContract.Document.COLUMN_DOCUMENT_ID) == id) found = true
+                found
+            }
+        } catch (_: Exception) { null }
+    }
 
     fun deleteDocument(asset: Asset): Boolean = DocumentsContract.deleteDocument(resolver, Uri.parse(asset.uri))
 

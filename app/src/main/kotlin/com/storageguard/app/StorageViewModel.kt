@@ -16,6 +16,8 @@ import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class Page { HOME, FINDINGS, SCAN, SETTINGS, HISTORY }
 data class DeviceStorage(val total: Long, val free: Long)
@@ -38,6 +40,7 @@ data class AppState(
     val message: String? = null,
     val sessions: List<ScanSession> = emptyList(),
     val attempts: List<CleanupAttempt> = emptyList(),
+    val cleanupLabels: Map<String, Asset> = emptyMap(),
 ) {
     val possibleBytes get() = groups.sumOf { it.possibleBytes }
     val selectedBytes get() = groups.flatMap { it.files }.filter { it.asset.uri in selected }.sumOf { it.asset.size ?: 0 }
@@ -54,6 +57,7 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
     private val consentChannel = Channel<IntentSenderRequest>(Channel.BUFFERED)
     val consent = consentChannel.receiveAsFlow()
     private var scanJob: Job? = null
+    private val reconciliation = Mutex()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -64,12 +68,17 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
                 val groups = files.filter { it.groupId != null && it.sha256 != null }.groupBy { it.groupId!! }
                     .map { (id, rows) -> DuplicateGroup(id, rows.map { HashedAsset(it.asset(), it.sha256!!) }) }
                     .filter { it.files.size > 1 }.sortedByDescending { it.possibleBytes }
-                _state.update { it.copy(ready = true, preferences = prefs, coverage = storage.coverage(),
+                _state.update { it.copy(ready = true, busy = true, preferences = prefs, coverage = storage.coverage(),
                     device = deviceStorage(), groups = groups, protected = defaults(groups), restored = groups.isNotEmpty(),
                     progress = ScanProgress(discovered = files.size)) }
-                reconcilePending(null)
+                if (dao.pending().isNotEmpty()) {
+                    reconcilePending(null)
+                    invalidateFindings()
+                    _state.update { it.copy(page = Page.HISTORY, message = "An interrupted cleanup was checked. Review its verified outcomes.") }
+                }
+                _state.update { it.copy(busy = false) }
             } catch (_: Exception) {
-                _state.update { it.copy(ready = true, message = "Local data could not be loaded. Try reopening the app.") }
+                _state.update { it.copy(ready = true, busy = false, message = "Local data could not be loaded. Try reopening the app.") }
             }
             launch { preferences.flow.collect { prefs -> _state.update { it.copy(preferences = prefs) } } }
             launch { dao.sessions().collect { sessions -> _state.update { it.copy(sessions = sessions) } } }
@@ -166,7 +175,7 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
     fun cleanup() {
         val snapshot = _state.value
         if (snapshot.busy || snapshot.running || snapshot.selected.isEmpty()) return
-        _state.update { it.copy(busy = true) }
+        _state.update { it.copy(busy = true, cleanupLabels = emptyMap()) }
         viewModelScope.launch(Dispatchers.IO) {
             var awaitingConsent = false
             try {
@@ -183,16 +192,20 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
                 val documents = plan.filter { it.target.asset.source == Source.DOCUMENT }
                 for (removal in documents) {
                     val attempt = attempt(batch, removal.target.asset, "DELETE")
+                    var requested = false
                     try {
                         preflight.verify(removal)
                         dao.attempts(listOf(attempt))
+                        requested = true
                         val accepted = storage.deleteDocument(removal.target.asset)
                         val exists = storage.documentExists(removal.target.asset.uri)
-                        finish(attempt, if (accepted && exists == false) "DELETED" else "UNVERIFIED",
+                        finish(attempt, CleanupEvidence.document(accepted, exists).name,
                             if (accepted && exists == false) "Provider confirmed deletion and the document is absent. Reclaimed space is unmeasured."
                             else "Document removal could not be verified. Check the provider before retrying.")
                     } catch (cancel: CancellationException) { throw cancel }
-                    catch (_: Exception) { finish(attempt, "SKIPPED", "Access, file identity or provider operation changed. Review and scan again.") }
+                    catch (_: Exception) { finish(attempt, if (requested) "UNVERIFIED" else "SKIPPED",
+                        if (requested) "Document operation was interrupted or failed. Removal could not be verified. Check the provider."
+                        else "Access or file identity changed before the request. Review and scan again.") }
                 }
                 if (media.isNotEmpty()) {
                     // Recheck after document operations and immediately before requesting Android consent.
@@ -224,14 +237,15 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
         finally { _state.update { it.copy(busy = false) } }
     }
 
-    private suspend fun reconcilePending(allowed: Boolean?) {
+    private suspend fun reconcilePending(allowed: Boolean?) = reconciliation.withLock {
         for (attempt in dao.pending()) {
             val uri = attempt.uri ?: continue
             if (attempt.action == "TRASH") {
-                when (storage.isTrashed(uri)) {
-                    true -> finish(attempt, "TRASHED", "Verified in Android trash. Retention is managed by Android/provider. Space recovered is unmeasured.")
-                    false -> finish(attempt, if (allowed == false) "SKIPPED" else "FAILED", "File is still present and not trashed.")
-                    null -> finish(attempt, "UNVERIFIED", "File status is unavailable. Missing access is not proof of removal.")
+                val status = CleanupEvidence.media(storage.isTrashed(uri), allowed)
+                when (status) {
+                    CleanupStatus.TRASHED -> finish(attempt, status.name, "Verified in Android trash. Retention is managed by Android/provider. Space recovered is unmeasured.")
+                    CleanupStatus.SKIPPED, CleanupStatus.FAILED -> finish(attempt, status.name, "File is still present and not trashed.")
+                    else -> finish(attempt, status.name, "File status is unavailable. Missing access is not proof of removal.")
                 }
             } else {
                 // On process death, an absent document alone does not prove our request deleted it.
@@ -241,7 +255,9 @@ class StorageViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun attempt(batch: String, asset: Asset, action: String) = CleanupAttempt(UUID.randomUUID().toString(), batch,
-        asset.uri, action, asset.size ?: 0, System.currentTimeMillis())
+        asset.uri, action, asset.size ?: 0, System.currentTimeMillis()).also { attempt ->
+            _state.update { it.copy(cleanupLabels = it.cleanupLabels + (attempt.id to asset)) }
+        }
     private suspend fun finish(attempt: CleanupAttempt, status: String, detail: String) {
         dao.attempts(listOf(attempt.copy(uri = null, completedAt = System.currentTimeMillis(), status = status, detail = detail)))
     }

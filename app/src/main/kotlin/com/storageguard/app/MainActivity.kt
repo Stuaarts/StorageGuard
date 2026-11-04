@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -86,12 +87,14 @@ private val LightColors = lightColorScheme(
     primary = Color(0xFF006B60), onPrimary = Color.White,
     primaryContainer = Color(0xFFC7F1E4), onPrimaryContainer = Color(0xFF073D35),
     secondary = Color(0xFF4C635C), surface = Color(0xFFF7FAF8), surfaceContainer = Color(0xFFECF2EE),
+    background = Color(0xFFF7FAF8), onBackground = Color(0xFF17221F),
     surfaceContainerLow = Color(0xFFF0F5F2), onSurface = Color(0xFF17221F), outlineVariant = Color(0xFFD2DFD8),
 )
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF85D5BD), onPrimary = Color(0xFF00382E),
     primaryContainer = Color(0xFF164E41), onPrimaryContainer = Color(0xFFC7F1E4),
     surface = Color(0xFF101916), surfaceContainer = Color(0xFF1B2822), surfaceContainerLow = Color(0xFF17211C),
+    background = Color(0xFF101916), onBackground = Color(0xFFE1EBE5),
     onSurface = Color(0xFFE1EBE5), outlineVariant = Color(0xFF3B4C43),
 )
 @Composable
@@ -121,7 +124,7 @@ private fun StorageGuardApp(state: AppState, vm: StorageViewModel, preview: (Ass
         })
     }
     LaunchedEffect(state.message) {
-        state.message?.let { snackbar.showSnackbar(it, duration = SnackbarDuration.Long); vm.dismissMessage() }
+        state.message?.let { snackbar.showSnackbar(it, withDismissAction = true, duration = SnackbarDuration.Long); vm.dismissMessage() }
     }
     LaunchedEffect(state.selected) { if (state.selected.isEmpty()) confirming = false }
     BackHandler(group != null || confirming || state.page == Page.HISTORY) {
@@ -322,12 +325,12 @@ private fun Findings(state: AppState, onOpen: (DuplicateGroup) -> Unit, onScan: 
         }
         item {
             Column {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("All" to "All", "PHOTOS" to "Photos", "VIDEOS" to "Videos", "OTHER" to "Other").forEach { (key, label) ->
                         FilterChip(selected = filter == key, onClick = { filter = key }, label = { Text(label) })
                     }
                 }
-                TextButton(onClick = { largest = !largest }) { Icon(Icons.Outlined.Sort, null); Spacer(Modifier.width(8.dp)); Text(if (largest) "Largest savings first" else "File name A–Z") }
+                TextButton(onClick = { largest = !largest }) { Icon(Icons.AutoMirrored.Outlined.Sort, null); Spacer(Modifier.width(8.dp)); Text(if (largest) "Largest savings first" else "File name A–Z") }
             }
         }
         if (groups.isEmpty()) item {
@@ -355,7 +358,8 @@ private fun Findings(state: AppState, onOpen: (DuplicateGroup) -> Unit, onScan: 
 
 @Composable
 private fun Review(state: AppState, group: DuplicateGroup, vm: StorageViewModel, preview: (Asset) -> Unit, onConfirm: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Eyebrow("Review copies") }
         item { Title("You decide what stays.", "${group.files.size} files have matching full-content hashes. Protect a copy, then select extras to remove.") }
         item { InfoCard(Icons.Outlined.Shield, "Keep a verified copy", "Cleanup checks access, metadata and full file contents again. Deleting copies in app-maintained folders can affect that app’s references or workflows.") }
@@ -387,7 +391,7 @@ private fun Review(state: AppState, group: DuplicateGroup, vm: StorageViewModel,
                     else if (asset.source == Source.DOCUMENT && !state.preferences.permanentDelete && asset.removable)
                         Text("Permanent document deletion is off. Enable it in Settings to select this copy.", style = MaterialTheme.typography.bodySmall)
                     else if (!asset.removable) Text("Provider access does not support removal.", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (!kept && asset.identity != null) TextButton(onClick = { vm.protect(group, asset.uri) }, enabled = !state.busy) { Text("Keep this") }
                         TextButton(onClick = { preview(asset) }) { Text("Preview") }
                         TextButton(onClick = { details = !details }) { Text(if (details) "Less" else "Details") }
@@ -403,9 +407,10 @@ private fun Review(state: AppState, group: DuplicateGroup, vm: StorageViewModel,
                 }
             }
         }
-        item {
+    }
+        Surface(shadowElevation = 2.dp) {
             Button(onClick = onConfirm, enabled = state.selected.isNotEmpty() && !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp).fillMaxWidth().heightIn(min = 56.dp)) {
                 if (state.busy) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp)) }
                 Text(if (state.busy) "Verifying copies…" else "Review ${state.selected.size} selected · ${formatBytes(state.selectedBytes)}")
             }
@@ -486,7 +491,7 @@ private fun History(state: AppState) {
         item { Eyebrow("Results & history") }
         item { Title("Every outcome, explained.", "Requests are checked against the provider. Moved to trash does not mean space recovered.") }
         if (state.attempts.isEmpty()) item { InfoCard(Icons.Outlined.History, "No cleanup yet", "Once you review and approve copies for removal, their outcomes will appear here.") }
-        items(state.attempts, key = { it.id }) { attempt -> AttemptCard(attempt) }
+        items(state.attempts, key = { it.id }) { attempt -> AttemptCard(attempt, state.cleanupLabels[attempt.id]) }
         item { Text("Recent scans", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
         if (state.sessions.isEmpty()) item { Text("No scans yet.") }
         items(state.sessions, key = { it.id }) { scan ->
@@ -503,13 +508,14 @@ private fun History(state: AppState) {
 }
 
 @Composable
-private fun AttemptCard(attempt: CleanupAttempt) {
+private fun AttemptCard(attempt: CleanupAttempt, asset: Asset?) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${attempt.status.lowercase().replaceFirstChar(Char::uppercase)} · ${if (attempt.action == "TRASH") "media trash" else "document deletion"}", fontWeight = FontWeight.Bold)
+            if (asset != null) Text("${asset.name}\n${asset.location}", style = MaterialTheme.typography.bodyMedium)
             Text("${formatBytes(attempt.bytes)} logical bytes · ${date(attempt.requestedAt)}", style = MaterialTheme.typography.bodySmall)
             Text(attempt.detail, style = MaterialTheme.typography.bodyMedium)
-            Text("Operation ${attempt.id.take(8)} · names and paths omitted from history", style = MaterialTheme.typography.labelSmall)
+            Text("Operation ${attempt.id.take(8)} · names and paths omitted from saved history", style = MaterialTheme.typography.labelSmall)
         }
     }
 }
