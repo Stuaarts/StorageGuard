@@ -14,12 +14,12 @@ A later lifecycle regression demonstrated that a repeated launcher intent with m
 
 No supported deletion-consent bypass, index-upload path, embedded credential/private-key exposure, SQL injection or incoming-intent cleanup command was found in reviewed first-party source. This is a review result, not proof that no unknown vulnerability exists.
 
-## Checks completed so far
+## Completed checks
 
 | Check | Observed result |
 | --- | --- |
 | Core JVM suite | 32 tests passed, including 15 added hardening/failure tests |
-| Android instrumented suites | 15 tests passed on APIs 30, 34 and 36 in the first expanded CI run; the final 16-test suite including repeated launches passed locally on API 34, with final CI rerun pending |
+| Android instrumented suites | All 16 tests passed on each of APIs 30, 34 and 36, including the repeated-launch regression |
 | Debug and optimized release builds | Passed |
 | Android lint | Passed, nonblocking update/style notices remain |
 | Actual release manifest | No Internet/all-files permission, backups disabled, not debuggable/testOnly, expected exported launcher and OS-protected profile receiver only |
@@ -28,7 +28,8 @@ No supported deletion-consent bypass, index-upload path, embedded credential/pri
 | Android 11 / API 30 denied access | Actual Android permission denial leaves accurate coverage UI and a responsive app; scan without access completes with zero accessible files |
 | Android 14 / API 34 selected-photo access | Selected two synthetic photos through Android's permission UI; app scanned those two and excluded a third unselected photo added afterward |
 | Actual process termination during consent | Before the single-task correction, killed the real app process while Android's consent UI remained open; approved the synthetic copy after termination, relaunched, and observed correct TRASHED reconciliation with original SHA-256 unchanged |
-| Hosted CI for the expanded checks | First expanded run passed all four jobs: [build and API 30/34/36 tests](https://github.com/Stuaarts/StorageGuard/actions/runs/41766108208); final single-task rerun pending |
+| Final APK restarted before approval | On Android 14, killed the app process with the native trash dialog open for the synthetic copy, then relaunched without approving. History recorded that the file was still present. MediaStore reported the original, duplicate and unrelated fixture as active, and all three SHA-256 hashes matched their pre-interruption values |
+| Hosted CI for the final code | All four jobs passed for `50df1ac`. [Build and Android 11, 14 and 16 tests](https://github.com/Stuaarts/StorageGuard/actions/runs/41768162345) |
 
 The dependency query used [OSV's package/version API](https://google.github.io/osv.dev/post-v1-querybatch/). It sent public component coordinates and versions, not user files or indexed metadata. Database coverage can be incomplete and new advisories can appear. Toolchain plugins, native platform vulnerabilities and unreported dependency defects are not certified by that result.
 

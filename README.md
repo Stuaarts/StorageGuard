@@ -56,7 +56,7 @@ On macOS/Linux use `bash ./gradlew` instead. If Java selection is wrong, point `
 
 The GitHub Actions workflow builds debug/release variants, runs core tests and lint, and runs emulator instrumentation. Generated APKs and reports are build artifacts, not committed source. Keep implementation milestones in focused commits and push completed, checked work to the configured Git remote.
 
-The workflow also checks the actual merged release manifest for unexpected permissions, debugging, backups and exported components, and runs device tests on Android API 30, 34 and 36. See [security and stability verification](docs/SECURITY_STABILITY_REVIEW.md) for measured results and remaining limits.
+The workflow checks the merged release manifest for unexpected permissions, debugging, backups and exported components. The latest verification passed 32 core tests and all 16 instrumented tests on each of Android 11, 14 and 16. The [security and stability review](docs/SECURITY_STABILITY_REVIEW.md) records manual cleanup checks and remaining release checks.
 
 ## Android references
 
