@@ -6,6 +6,8 @@ StorageGuard helps Android owners understand redundant files and safely review e
 
 The MVP is a native Kotlin / Jetpack Compose app for Android 11 and newer. It processes accessible files on the device, with no account, backend, advertising, analytics, or file uploads. Detection uses full streaming SHA-256 hashes, with a fresh byte comparison before cleanup. It never deletes automatically.
 
+The [StorageGuard privacy policy](https://stuaarts.github.io/StorageGuard/) is also available under **Settings → Privacy policy** in the app.
+
 ## Project status
 
 The first working MVP is implemented from [the product brief](StorageGuard_Android_MVP_Brief.docx). It includes the scanner, review screens, Android-approved trash, optional local document deletion and local persistence. It is a development build, with physical-device and multi-version release checks still required. See [delivery status](docs/DELIVERY.md) for tested behavior and remaining release work. The companion IDE prompt named in the brief was not supplied.

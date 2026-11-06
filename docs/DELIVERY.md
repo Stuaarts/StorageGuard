@@ -11,6 +11,7 @@ First implementation delivered November 3, 2026. The app is an MVP development b
 - No automatic selection/removal. Explicit keep/remove controls, fresh metadata/hashes/byte comparison, maximum 50-copy batch, OS-approved media trash and off-by-default permanent local document deletion.
 - Provider outcome reconciliation, approval/denial handling, persisted pending requests, unverified outcomes for missing evidence, no claims of measured reclaimed storage.
 - Reset of local index/history/preferences and saved grants, no network permission/backend/account/analytics, backup/transfer exclusions.
+- Public [StorageGuard Privacy Policy](https://stuaarts.github.io/StorageGuard/) on GitHub Pages, linked from Settings in version `0.1.1` (build `2`). Android opens it in a browser.
 - Gradle wrapper with distribution checksum, exported Room schema, GitHub Actions build/lint/test workflow and project documentation.
 
 ## Verification

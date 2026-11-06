@@ -1,5 +1,7 @@
 # Privacy
 
+The public [StorageGuard Privacy Policy](https://stuaarts.github.io/StorageGuard/) is linked from the app's Settings. Edit [the published source](privacy/index.html) on `main`, then deploy it with `git subtree push --prefix=docs/privacy origin gh-pages`.
+
 StorageGuard compares files that you permit it to read. There is no login, backend, advertising SDK, analytics SDK or app Internet permission. The app does not upload file content, hashes, names or locations.
 
 ## What stays on the device

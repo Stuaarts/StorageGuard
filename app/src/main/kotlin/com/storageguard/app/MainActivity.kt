@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +53,8 @@ import com.storageguard.core.*
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+
+private const val PRIVACY_POLICY_URL = "https://stuaarts.github.io/StorageGuard/"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,6 +114,7 @@ fun StorageGuardTheme(content: @Composable () -> Unit) {
 @Composable
 private fun StorageGuardApp(state: AppState, vm: StorageViewModel, preview: (Asset) -> Unit) {
     val snackbar = remember { SnackbarHostState() }
+    val uriHandler = LocalUriHandler.current
     var groupId by rememberSaveable { mutableStateOf<String?>(null) }
     var confirming by rememberSaveable { mutableStateOf(false) }
     var purging by rememberSaveable { mutableStateOf(false) }
@@ -172,7 +176,11 @@ private fun StorageGuardApp(state: AppState, vm: StorageViewModel, preview: (Ass
                     state.page == Page.FINDINGS -> Findings(state, onOpen = { groupId = it.id }, onScan = { vm.scan() })
                     state.page == Page.SETTINGS -> Settings(state, requestAccess, onPhotos = { photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
                         onFolder = { folder.launch(null) }, onDocuments = { documents.launch(arrayOf("*/*")) },
-                        onRemove = { vm.removeSource(it) }, onPermanent = { vm.permanent(it) }, onPurge = { purging = true })
+                        onRemove = { vm.removeSource(it) }, onPermanent = { vm.permanent(it) }, onPurge = { purging = true },
+                        onPrivacyPolicy = {
+                            try { uriHandler.openUri(PRIVACY_POLICY_URL) }
+                            catch (_: IllegalArgumentException) { vm.message("Open $PRIVACY_POLICY_URL in a web browser.") }
+                        })
                     state.page == Page.HISTORY -> History(state)
                 }
             }
@@ -453,9 +461,10 @@ private fun Confirmation(state: AppState, onBack: () -> Unit, onConfirm: () -> U
 
 @Composable
 private fun Settings(state: AppState, onAccess: () -> Unit, onPhotos: () -> Unit, onFolder: () -> Unit, onDocuments: () -> Unit,
-    onRemove: (String) -> Unit, onPermanent: (Boolean) -> Unit, onPurge: () -> Unit) = PageColumn {
+    onRemove: (String) -> Unit, onPermanent: (Boolean) -> Unit, onPurge: () -> Unit, onPrivacyPolicy: () -> Unit) = PageColumn {
     Eyebrow("Access & privacy")
     Title("Your scan, your scope.", "Grant only the access you want. Coverage can change when Android permissions or providers change.")
+    OutlinedButton(onClick = onPrivacyPolicy, modifier = Modifier.fillMaxWidth()) { Text("Privacy policy") }
     InfoCard(Icons.Outlined.Visibility, state.coverage.label, "Photos: ${if (state.coverage.images) "granted" else "not fully granted"}. Videos: ${if (state.coverage.videos) "granted" else "not fully granted"}. Selected-media access: ${if (state.coverage.partial) "granted" else "not granted"}.")
     OutlinedButton(onClick = onAccess, enabled = !state.busy && !state.running, modifier = Modifier.fillMaxWidth()) { Text("Grant or reselect media access") }
     OutlinedButton(onClick = onPhotos, enabled = !state.busy && !state.running, modifier = Modifier.fillMaxWidth()) { Text("Choose photos & videos") }
@@ -486,7 +495,7 @@ private fun Settings(state: AppState, onAccess: () -> Unit, onPhotos: () -> Unit
     InfoCard(Icons.Outlined.Lock, "Local processing, no account", "The app has no Internet permission, backend or analytics. File metadata, hashes and recent history stay in local app storage. A selected cloud provider may retrieve files through its own connection.")
     Text("Other apps’ private caches and databases are inaccessible. This app does not recover deleted files, scan hidden app data or guarantee forensic erasure. Unknown provider identities remain review-only.", style = MaterialTheme.typography.bodyMedium)
     OutlinedButton(onClick = onPurge, enabled = !state.running && !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Reset local app data") }
-    Text("StorageGuard 0.1.0 · Android 11+", style = MaterialTheme.typography.labelMedium)
+    Text("StorageGuard · Android 11+", style = MaterialTheme.typography.labelMedium)
 }
 
 @Composable
