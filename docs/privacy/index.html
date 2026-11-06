@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How StorageGuard for Android accesses, uses, and protects your data.">
+  <title>StorageGuard Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 1rem/1.65 system-ui, sans-serif; margin: 0; }
+    main { max-width: 44rem; margin: auto; padding: 2.5rem 1.25rem 3rem; }
+    h1, h2 { line-height: 1.25; }
+    h2 { margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>StorageGuard Privacy Policy</h1>
+    <p>Effective <time datetime="2026-11-06">November 6, 2026</time></p>
+    <p>This policy covers StorageGuard for Android, developed by Stuaarts. StorageGuard compares files on your device. It has no account, backend, advertising, analytics, or crash-reporting service. The app has no Internet permission and does not send your files, file metadata, or scan results to the developer.</p>
+
+    <h2>Data the app accesses and uses</h2>
+    <p>StorageGuard reads photos and videos available through the Android permissions you grant. Android may let you grant access to only selected media. You can also choose specific photos, videos, documents, and folders through Android's pickers. The app reads permitted file contents to compare them and stores file hashes and duplicate matches locally. It reads aggregate device storage totals to show used and available space.</p>
+    <p>The local scan index can include file names, sizes, types, modification times, locations, Android file references and provider identities. The app also stores recent scan dates, scope, status and counts, along with your settings and selected locations. Pending cleanup requests store file references so the app can check interrupted operations. Completed cleanup history keeps operation identifiers, dates, action, outcome and logical byte counts. StorageGuard does not save copies of your files or previews in its database.</p>
+
+    <h2>When other apps or services are involved</h2>
+    <p>If you preview a file, StorageGuard asks Android to open it with a compatible viewer and grants that viewer temporary read access. If you choose a cloud-backed file or folder, that provider may fetch it using its own connection. Viewers and providers handle data under their own privacy policies.</p>
+    <p>If you request cleanup, StorageGuard passes the selected file references to Android's media service or the authorized local document provider. Android asks you to approve moving media to Trash. Permanent deletion of supported local documents is off by default and requires your review and confirmation. StorageGuard never deletes files automatically.</p>
+
+    <h2>Security, retention, and deletion</h2>
+    <p>Android permissions limit which files StorageGuard can read. Scan records and settings are stored in app-private storage and excluded from the app's backup and transfer rules. StorageGuard keeps the latest scan index, up to 20 recent scan sessions, and up to 200 recent cleanup history entries, plus pending entries that still need reconciliation.</p>
+    <p>Use <strong>Settings → Reset local app data</strong> to clear the index, history, and settings and release saved picker access. Reset leaves your files in place. To revoke system media permissions, use Android Settings. Uninstalling the app removes its private app data through Android. Android and the provider control Trash retention and restoration.</p>
+
+    <h2>This website and privacy questions</h2>
+    <p>This policy is hosted by GitHub Pages. When you open it in a browser, GitHub logs the visitor IP address for security purposes. See the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub privacy statement</a>.</p>
+    <p>For privacy questions, <a href="https://github.com/Stuaarts/StorageGuard/issues/new">contact Stuaarts through the StorageGuard issue tracker</a>. Issues are public, so leave out private files, file paths, and personal details.</p>
+  </main>
+</body>
+</html>
