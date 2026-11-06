@@ -24,13 +24,17 @@ Available on Android 11 and newer.
 
 ## Visual assets
 
-- [App icon](app-icon.png) is a 512 × 512 PNG based on the Android launcher artwork.
-- [Feature graphic](feature-graphic.png) is a 1,024 × 500 RGB PNG.
-- [Phone screenshots](phone/) are 1,080 × 1,920 PNGs.
-- [7-inch tablet screenshots](tablet-7-inch/) are 1,080 × 1,920 PNGs.
-- [10-inch tablet screenshots](tablet-10-inch/) are 2,560 × 1,440 PNGs.
+All 14 PNGs are in the [images folder](images/).
 
-Upload each screenshot set in filename order. The screens show the dashboard, duplicate findings, protected-copy review, and final review before Android approval. They were captured in Android emulator phone and tablet display configurations with synthetic files. The file selection shown in the screenshots was made manually.
+| Play Console field | File or filename prefix | Dimensions |
+| --- | --- | --- |
+| App icon | [app-icon-512x512.png](images/app-icon-512x512.png) | 512 × 512 |
+| Feature graphic | [feature-graphic-1024x500.png](images/feature-graphic-1024x500.png) | 1,024 × 500 |
+| Phone screenshots | `phone-` | 1,080 × 1,920 |
+| 7-inch tablet screenshots | `tablet-7-inch-` | 1,080 × 1,920 |
+| 10-inch tablet screenshots | `tablet-10-inch-` | 2,560 × 1,440 |
+
+Upload each screenshot set in numeric order. `01` shows the dashboard, `02` shows duplicate findings, `03` shows protected-copy review, and `04` shows final review before Android approval. The screenshots were captured in Android emulator phone and tablet display configurations with synthetic files. The file selection shown in the screenshots was made manually.
 
 ## Privacy policy
 
